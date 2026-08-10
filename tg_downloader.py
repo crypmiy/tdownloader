@@ -17,7 +17,7 @@ DUA CARA PAKAI:
        python3 tg_downloader.py --channel @namachannel --days 30 --media
 
 Fitur:
-  - --list-channels : daftar semua channel/grup yang Anda ikuti (ID + username)
+  - --list-channels : daftar channel, grup, dan bot Anda (ID + username)
   - Rentang waktu   : dari awal channel, --from-date/--to-date, atau --days N
   - Media opsional  : --media, filter jenis (--media-types), batas ukuran
   - Filter kata kunci (--keyword), batas jumlah (--limit), urutan (--order)
@@ -65,7 +65,7 @@ MEDIA_TYPES = ["photo", "gif", "video", "voice", "audio", "sticker", "document"]
 
 CSV_COLS = ["id", "date_local", "date_utc", "sender_id", "sender_name", "text",
             "media_type", "media_file", "media_note", "views", "forwards",
-            "replies", "reply_to_id", "edit_date_utc", "forwarded", "link"]
+            "replies", "reply_to_id", "edit_date_utc", "forwarded", "link", "out"]
 
 CONFIG_PATH = Path(__file__).resolve().with_name("tg_config.json")
 
@@ -311,10 +311,18 @@ async def cetak_daftar(client, semua):
     print("-" * 80)
     n = 0
     async for d in client.iter_dialogs():
-        if not semua and not (d.is_channel or d.is_group):
+        is_bot = d.is_user and getattr(d.entity, "bot", False)
+        if not semua and not (d.is_channel or d.is_group or is_bot):
             continue
         uname = getattr(d.entity, "username", None)
-        jenis = "grup" if d.is_group else ("channel" if d.is_channel else "chat")
+        if d.is_group:
+            jenis = "grup"
+        elif d.is_channel:
+            jenis = "channel"
+        elif is_bot:
+            jenis = "bot"
+        else:
+            jenis = "chat"
         print(f"{d.id:>16}  {jenis:<8}  {('@' + uname) if uname else '-':<26}  {d.name}")
         n += 1
     print("-" * 80)
@@ -360,6 +368,8 @@ async def unduh_channel(client, args, ref, tz, from_utc, to_utc, cache):
     entity = await resolve_entity(client, ref, cache)
     judul = tg_utils.get_display_name(entity) or str(ref)
     uname = getattr(entity, "username", None)
+    # link pesan t.me/<uname>/<id> hanya valid utk channel/supergrup publik
+    punya_link = bool(uname) and hasattr(entity, "broadcast")
     slug = slugify(uname or judul)
 
     out_dir = Path(args.output) / slug
@@ -472,7 +482,8 @@ async def unduh_channel(client, args, ref, tz, from_utc, to_utc, cache):
                     "edit_date_utc": msg.edit_date.isoformat() if msg.edit_date else None,
                     "grouped_id": msg.grouped_id,
                     "fwd": fwd_summary(msg),
-                    "link": f"https://t.me/{uname}/{msg.id}" if uname else None,
+                    "link": f"https://t.me/{uname}/{msg.id}" if punya_link else None,
+                    "out": bool(msg.out),
                 }
                 writers.write(rec)
                 n_simpan += 1
@@ -543,25 +554,32 @@ async def pilih_channel(client, cache):
     if cache.get("dialogs") is None:
         print("[i] Memuat daftar channel/grup ...")
         cache["dialogs"] = await client.get_dialogs()
-    kanal = [d for d in cache["dialogs"] if d.is_channel or d.is_group]
+    kanal = [d for d in cache["dialogs"]
+             if d.is_channel or d.is_group
+             or (d.is_user and getattr(d.entity, "bot", False))]
     if not kanal:
-        print("[!] Akun ini tidak mengikuti channel/grup apa pun.")
+        print("[!] Akun ini tidak punya channel/grup/bot apa pun.")
         return None
 
-    kata = tanya("Cari nama channel (Enter = tampilkan semua)", "")
+    kata = tanya("Cari nama channel/bot (Enter = tampilkan semua)", "")
     while True:
         tampil = ([d for d in kanal if kata.lower() in (d.name or "").lower()]
                   if kata else kanal)
         if not tampil:
             print(f"[!] Tidak ada yang cocok dengan '{kata}'.")
-            kata = tanya("Cari nama channel (Enter = tampilkan semua)", "")
+            kata = tanya("Cari nama channel/bot (Enter = tampilkan semua)", "")
             continue
 
         print(f"\n{'NO':>4}  {'JENIS':<8} {'USERNAME':<24} NAMA")
         print("-" * 76)
         for i, d in enumerate(tampil, 1):
             uname = getattr(d.entity, "username", None)
-            jenis = "grup" if d.is_group else "channel"
+            if d.is_group:
+                jenis = "grup"
+            elif d.is_channel:
+                jenis = "channel"
+            else:
+                jenis = "bot"
             print(f"{i:>4}  {jenis:<8} {('@' + uname) if uname else '-':<24} {d.name}")
         print("-" * 76)
 
@@ -727,7 +745,7 @@ def parse_args():
 
     apa = p.add_argument_group("Pilih sumber")
     apa.add_argument("--list-channels", action="store_true",
-                     help="Tampilkan daftar channel & grup yang Anda ikuti, lalu keluar")
+                     help="Tampilkan daftar channel, grup, dan bot Anda, lalu keluar")
     apa.add_argument("--list-all", action="store_true",
                      help="Seperti --list-channels tetapi termasuk chat pribadi/bot")
     apa.add_argument("--channel", action="append", metavar="CH",

@@ -9,7 +9,7 @@ Dua cara pakai:
 
 ## Fitur
 
-- Daftar semua channel/grup yang diikuti (`--list-channels`), dengan ID dan username.
+- Daftar semua channel, grup, dan **chat bot** pada akun (`--list-channels`), dengan ID dan username — riwayat chat Anda dengan bot bisa diunduh seperti channel biasa.
 - Unduh dari satu atau banyak channel sekaligus (`--channel` bisa diulang).
 - Rentang waktu fleksibel: dari awal channel, N hari terakhir (`--days`), atau rentang tanggal tertentu (`--from-date` / `--to-date`, waktu lokal).
 - Unduh media opsional (`--media`) dengan filter jenis (`--media-types`) dan batas ukuran per file (`--max-media-mb`). Unduhan media idempoten — rerun tidak mengunduh ulang file yang sudah ada.
@@ -29,7 +29,7 @@ Dua cara pakai:
 Ubuntu 24 memakai PEP 668 (*externally-managed-environment*), jadi gunakan venv:
 
 ```bash
-git clone https://github.com/crypmiy/tdownloader.git
+git clone https://github.com/USERNAME/tdownloader.git
 cd tdownloader
 python3 -m venv venv
 venv/bin/pip install telethon
@@ -114,7 +114,7 @@ tg_download/
     └── state.json          # id pesan terakhir, dipakai --resume
 ```
 
-Field per pesan (JSONL/CSV): `id`, `date_local`, `date_utc`, `sender_id`, `sender_name`, `post_author`, `text`, `media_type`, `media_file`, `media_note`, `views`, `forwards`, `replies`, `reply_to_id`, `edit_date_utc`, `grouped_id`, `fwd` (asal forward), `link`.
+Field per pesan (JSONL/CSV): `id`, `date_local`, `date_utc`, `sender_id`, `sender_name`, `post_author`, `text`, `media_type`, `media_file`, `media_note`, `views`, `forwards`, `replies`, `reply_to_id`, `edit_date_utc`, `grouped_id`, `fwd` (asal forward), `link`, `out` (`true` = pesan kiriman Anda sendiri, berguna untuk memisahkan perintah Anda vs balasan bot).
 
 ## Otomasi (systemd timer)
 
