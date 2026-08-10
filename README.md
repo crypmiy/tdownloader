@@ -1,6 +1,10 @@
 # tg-downloader
 
+[![Release](https://img.shields.io/github/v/release/crypmiy/tdownloader)](https://github.com/crypmiy/tdownloader/releases)
+
 Pengunduh pesan (dan media) dari channel/grup Telegram yang Anda ikuti, berbasis [Telethon](https://github.com/LonamiWebs/Telethon). Login memakai **akun pengguna** (bukan bot API), sehingga bisa membaca riwayat semua channel yang memang diikuti akun tersebut.
+
+Riwayat perubahan tiap versi ada di [CHANGELOG.md](CHANGELOG.md); versi stabil terbaru bisa diunduh dari halaman [Releases](https://github.com/crypmiy/tdownloader/releases).
 
 Dua cara pakai:
 

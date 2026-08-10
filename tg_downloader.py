@@ -61,6 +61,8 @@ try:
 except ImportError:
     sys.exit("Modul 'telethon' belum terpasang. Jalankan: pip install telethon")
 
+__version__ = "1.0.0"
+
 MEDIA_TYPES = ["photo", "gif", "video", "voice", "audio", "sticker", "document"]
 
 CSV_COLS = ["id", "date_local", "date_utc", "sender_id", "sender_name", "text",
@@ -732,6 +734,8 @@ def parse_args():
 
     p.add_argument("-i", "--interactive", action="store_true",
                    help="Paksa mode interaktif (otomatis aktif bila tanpa argumen)")
+    p.add_argument("--version", action="version",
+                   version=f"%(prog)s v{__version__}")
 
     akun = p.add_argument_group("Akun / API")
     akun.add_argument("--api-id",
@@ -803,6 +807,7 @@ def parse_args():
 
 async def amain():
     args, parser = parse_args()
+    print(f"[i] tg_downloader v{__version__}")
     wizard = args.interactive or len(sys.argv) == 1
 
     # ---- kredensial API: argumen > env > tg_config.json > tanya (wizard)
