@@ -6,6 +6,18 @@ penomoran versi mengikuti [Semantic Versioning](https://semver.org/lang/id/)
 (MAJOR.MINOR.PATCH — MAJOR: perubahan yang memutus kompatibilitas,
 MINOR: fitur baru, PATCH: perbaikan bug).
 
+## [1.1.0] - 2026-08-30
+
+### Ditambahkan
+- Navigasi wizard: ketik `b` di pertanyaan mana pun untuk kembali ke
+  langkah/menu sebelumnya, dan `q` untuk keluar program dengan rapi
+  (tidak perlu Ctrl+C lagi).
+- Konfirmasi akhir mendukung `b` untuk kembali mengubah pengaturan
+  sebelum unduhan dimulai.
+- Wizard dirombak menjadi mesin langkah (step machine): `b` di tengah
+  suatu langkah mengulang menu langkah itu, `b` di awal langkah mundur
+  ke langkah sebelumnya.
+
 ## [1.0.0] - 2026-08-10
 
 ### Ditambahkan

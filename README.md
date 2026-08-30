@@ -57,7 +57,7 @@ Run pertama akan diminta nomor HP + kode OTP (dan password 2FA bila aktif). Sesi
 venv/bin/python tg_downloader.py
 ```
 
-Wizard akan memandu: pilih channel dari daftar bernomor (bisa cari nama, bisa pilih beberapa, mis. `1,3,5`), rentang waktu, media, format, dst. Sebelum mulai, ditampilkan ringkasan + perintah CLI setara.
+Wizard akan memandu: pilih channel dari daftar bernomor (bisa cari nama, bisa pilih beberapa, mis. `1,3,5`), rentang waktu, media, format, dst. Sebelum mulai, ditampilkan ringkasan + perintah CLI setara. Di setiap pertanyaan, ketik `b` untuk kembali ke langkah sebelumnya atau `q` untuk keluar.
 
 ### Mode CLI
 

@@ -11,6 +11,7 @@ DUA CARA PAKAI:
   A. Mode interaktif (wizard) — tinggal jawab pertanyaan, tanpa hafal opsi:
        python3 tg_downloader.py
      (atau paksa dengan -i / --interactive)
+     Navigasi: ketik 'b' untuk kembali ke langkah sebelumnya, 'q' untuk keluar.
      Di akhir wizard dicetak perintah CLI setara, bisa disimpan utk cron/systemd.
 
   B. Mode CLI penuh — semua opsi lewat argumen (lihat --help):
@@ -61,7 +62,7 @@ try:
 except ImportError:
     sys.exit("Modul 'telethon' belum terpasang. Jalankan: pip install telethon")
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 MEDIA_TYPES = ["photo", "gif", "video", "voice", "audio", "sticker", "document"]
 
@@ -196,20 +197,34 @@ def simpan_config(data):
 
 # ---------------------------------------------------------------- prompt
 
-def tanya(prompt, default=None):
-    """Prompt teks sederhana. Enter = default."""
+class Kembali(Exception):
+    """Pengguna mengetik 'b' — kembali ke langkah/menu sebelumnya."""
+
+
+class Keluar(Exception):
+    """Pengguna mengetik 'q' — keluar dari program dengan rapi."""
+
+
+def tanya(prompt, default=None, back=True):
+    """Prompt teks. Enter = default. 'q' = keluar program;
+    'b' = kembali ke langkah sebelumnya (bila back=True)."""
     suf = f" [{default}]" if default not in (None, "") else ""
     try:
         j = input(f"{prompt}{suf}: ").strip()
     except EOFError:
         j = ""
+    low = j.lower()
+    if low == "q":
+        raise Keluar
+    if back and low == "b":
+        raise Kembali
     return j if j else (default or "")
 
 
-def tanya_ya(prompt, default=False):
+def tanya_ya(prompt, default=False, back=True):
     """Prompt ya/tidak. Enter = default."""
     d = "Y/t" if default else "y/T"
-    j = tanya(f"{prompt} ({d})", "").lower()
+    j = tanya(f"{prompt} ({d})", "", back=back).lower()
     if not j:
         return default
     return j.startswith("y")
@@ -551,17 +566,17 @@ def bangun_perintah(ns, dialogs, from_str, to_str, days):
     return " ".join(shlex.quote(x) if (" " in x) else x for x in p)
 
 
-async def pilih_channel(client, cache):
-    """Tampilkan daftar bernomor, dukung pencarian, pilih satu/banyak."""
+async def langkah_channel(client, cache, st):
+    """Langkah 1: pilih satu/banyak channel, grup, atau bot dari daftar."""
     if cache.get("dialogs") is None:
-        print("[i] Memuat daftar channel/grup ...")
+        print("[i] Memuat daftar channel/grup/bot ...")
         cache["dialogs"] = await client.get_dialogs()
     kanal = [d for d in cache["dialogs"]
              if d.is_channel or d.is_group
              or (d.is_user and getattr(d.entity, "bot", False))]
     if not kanal:
         print("[!] Akun ini tidak punya channel/grup/bot apa pun.")
-        return None
+        raise Keluar
 
     kata = tanya("Cari nama channel/bot (Enter = tampilkan semua)", "")
     while True:
@@ -585,141 +600,203 @@ async def pilih_channel(client, cache):
             print(f"{i:>4}  {jenis:<8} {('@' + uname) if uname else '-':<24} {d.name}")
         print("-" * 76)
 
-        j = tanya("Pilih nomor (boleh banyak, pisah koma/spasi; "
-                  "atau ketik kata pencarian baru)")
+        try:
+            j = tanya("Pilih nomor (boleh banyak, pisah koma/spasi; "
+                      "atau ketik kata pencarian baru)")
+        except Kembali:
+            # b di sini = kembali ke kotak pencarian
+            kata = tanya("Cari nama channel/bot (Enter = tampilkan semua)", "")
+            continue
         token = [t for t in re.split(r"[,\s]+", j) if t]
         if token and all(t.isdigit() for t in token):
             idx = [int(t) for t in token]
             if all(1 <= x <= len(tampil) for x in idx):
-                terpilih = [tampil[x - 1] for x in idx]
-                print("[i] Dipilih: " + ", ".join(d.name for d in terpilih))
-                return terpilih
+                st["terpilih"] = [tampil[x - 1] for x in idx]
+                print("[i] Dipilih: " + ", ".join(d.name for d in st["terpilih"]))
+                return
             print("[!] Ada nomor di luar jangkauan daftar.")
         else:
             kata = j  # anggap sebagai kata pencarian baru
 
 
-async def mode_interaktif(client, tz, cache):
-    """Wizard: kumpulkan semua opsi lewat tanya-jawab. Kembalikan
-    (namespace, daftar_dialog_terpilih, from_utc, to_utc) atau None bila batal."""
-    print("\n================ MODE INTERAKTIF ================")
-
-    # 1) channel
-    terpilih = await pilih_channel(client, cache)
-    if not terpilih:
-        return None
-
-    # 2) rentang waktu
-    from_utc = to_utc = None
-    days = None
-    from_str = to_str = None
-    print("\nRentang waktu:")
-    print("  1) Dari awal channel sampai sekarang")
-    print("  2) N hari terakhir")
-    print("  3) Rentang tanggal tertentu")
-    pil = tanya("Pilihan", "1")
-    if pil == "2":
-        while True:
-            n = tanya("Berapa hari terakhir", "30")
-            if n.isdigit() and int(n) > 0:
-                days = int(n)
-                from_utc = datetime.now(timezone.utc) - timedelta(days=days)
-                break
-            print("[!] Masukkan angka bulat > 0.")
-    elif pil == "3":
-        while True:
-            s = tanya("Tanggal mulai, YYYY-MM-DD atau 'YYYY-MM-DD HH:MM' "
-                      "(Enter = dari awal)", "")
-            if not s:
-                break
-            try:
-                from_utc = parse_local_dt(s, tz)
-                from_str = s
-                break
-            except ValueError as e:
-                print(f"[!] {e}")
-        while True:
-            s = tanya("Tanggal akhir (Enter = sampai sekarang)", "")
-            if not s:
-                break
-            try:
-                calon = parse_local_dt(s, tz, akhir_hari=True)
-            except ValueError as e:
-                print(f"[!] {e}")
-                continue
-            if from_utc and calon <= from_utc:
-                print("[!] Tanggal akhir harus setelah tanggal mulai.")
-                continue
-            to_utc = calon
-            to_str = s
-            break
-
-    # 3) resume, urutan, limit
-    resume = tanya_ya("Lanjutkan dari unduhan sebelumnya (resume)?", False)
-    pil = tanya("Urutan unduh: 1) lama->baru  2) baru->lama", "1")
-    order = "newest" if pil.strip() == "2" else "oldest"
-    limit = None
-    j = tanya("Batas jumlah pesan (Enter = tanpa batas)", "")
-    if j.isdigit() and int(j) > 0:
-        limit = int(j)
-
-    # 4) kata kunci
-    j = tanya("Filter kata kunci, pisah spasi (Enter = tanpa filter)", "")
-    keyword = j.split() if j else None
-
-    # 5) media
-    media = tanya_ya("Unduh juga file media (foto/video/dokumen)?", False)
-    media_types = list(MEDIA_TYPES)
-    max_mb = 50.0
-    if media:
-        j = tanya("Jenis media, pisah spasi (Enter = semua)\n"
-                  "  pilihan: " + " ".join(MEDIA_TYPES), "")
-        if j:
-            valid = [t for t in j.split() if t in MEDIA_TYPES]
-            if valid:
-                media_types = valid
-            else:
-                print("[!] Tidak ada jenis valid, dipakai: semua.")
-        j = tanya("Batas ukuran per file (MB)", "50")
+async def langkah_waktu(tz, st):
+    """Langkah 2: rentang waktu. 'b' di sub-pertanyaan mengulang menu ini."""
+    while True:
+        print("\nRentang waktu:")
+        print("  1) Dari awal channel sampai sekarang")
+        print("  2) N hari terakhir")
+        print("  3) Rentang tanggal tertentu")
+        pil = tanya("Pilihan", "1")
+        st.update(from_utc=None, to_utc=None, days=None,
+                  from_str=None, to_str=None)
         try:
-            max_mb = float(j)
-        except ValueError:
-            print("[!] Bukan angka, dipakai 50 MB.")
+            if pil == "2":
+                while True:
+                    n = tanya("Berapa hari terakhir", "30")
+                    if n.isdigit() and int(n) > 0:
+                        st["days"] = int(n)
+                        st["from_utc"] = (datetime.now(timezone.utc)
+                                          - timedelta(days=int(n)))
+                        break
+                    print("[!] Masukkan angka bulat > 0.")
+            elif pil == "3":
+                while True:
+                    s = tanya("Tanggal mulai, YYYY-MM-DD atau 'YYYY-MM-DD HH:MM' "
+                              "(Enter = dari awal)", "")
+                    if not s:
+                        break
+                    try:
+                        st["from_utc"] = parse_local_dt(s, tz)
+                        st["from_str"] = s
+                        break
+                    except ValueError as e:
+                        print(f"[!] {e}")
+                while True:
+                    s = tanya("Tanggal akhir (Enter = sampai sekarang)", "")
+                    if not s:
+                        break
+                    try:
+                        calon = parse_local_dt(s, tz, akhir_hari=True)
+                    except ValueError as e:
+                        print(f"[!] {e}")
+                        continue
+                    if st["from_utc"] and calon <= st["from_utc"]:
+                        print("[!] Tanggal akhir harus setelah tanggal mulai.")
+                        continue
+                    st["to_utc"] = calon
+                    st["to_str"] = s
+                    break
+            return
+        except Kembali:
+            continue  # ulangi menu rentang waktu
 
-    # 6) format & folder output
-    j = tanya("Format output (jsonl/csv/txt, boleh lebih dari satu, pisah spasi)",
-              "jsonl")
-    fmt = [f for f in j.split() if f in ("jsonl", "csv", "txt")] or ["jsonl"]
-    out = tanya("Folder output", "tg_download")
 
+async def langkah_opsi(st):
+    """Langkah 3: resume, urutan, limit, kata kunci."""
+    while True:
+        resume = tanya_ya("Lanjutkan dari unduhan sebelumnya (resume)?", False)
+        try:
+            pil = tanya("Urutan unduh: 1) lama->baru  2) baru->lama", "1")
+            order = "newest" if pil.strip() == "2" else "oldest"
+            limit = None
+            j = tanya("Batas jumlah pesan (Enter = tanpa batas)", "")
+            if j.isdigit() and int(j) > 0:
+                limit = int(j)
+            j = tanya("Filter kata kunci, pisah spasi (Enter = tanpa filter)", "")
+            keyword = j.split() if j else None
+            st.update(resume=resume, order=order, limit=limit, keyword=keyword)
+            return
+        except Kembali:
+            continue  # ulangi dari pertanyaan resume
+
+
+async def langkah_media(st):
+    """Langkah 4: opsi media."""
+    while True:
+        media = tanya_ya("Unduh juga file media (foto/video/dokumen)?", False)
+        media_types = list(MEDIA_TYPES)
+        max_mb = 50.0
+        try:
+            if media:
+                j = tanya("Jenis media, pisah spasi (Enter = semua)\n"
+                          "  pilihan: " + " ".join(MEDIA_TYPES), "")
+                if j:
+                    valid = [t for t in j.split() if t in MEDIA_TYPES]
+                    if valid:
+                        media_types = valid
+                    else:
+                        print("[!] Tidak ada jenis valid, dipakai: semua.")
+                j = tanya("Batas ukuran per file (MB)", "50")
+                try:
+                    max_mb = float(j)
+                except ValueError:
+                    print("[!] Bukan angka, dipakai 50 MB.")
+            st.update(media=media, media_types=media_types, max_mb=max_mb)
+            return
+        except Kembali:
+            continue  # ulangi dari pertanyaan media ya/tidak
+
+
+async def langkah_output(st):
+    """Langkah 5: format & folder output."""
+    while True:
+        j = tanya("Format output (jsonl/csv/txt, boleh lebih dari satu, "
+                  "pisah spasi)", "jsonl")
+        try:
+            fmt = [f for f in j.split() if f in ("jsonl", "csv", "txt")] or ["jsonl"]
+            out = tanya("Folder output", "tg_download")
+            st.update(fmt=fmt, out=out)
+            return
+        except Kembali:
+            continue
+
+
+async def langkah_konfirmasi(tz, st):
+    """Langkah 6: ringkasan + konfirmasi. 'b' = kembali ubah pengaturan."""
     ns = argparse.Namespace(
-        media=media, media_types=media_types, max_media_mb=max_mb, sleep=0.0,
-        format=fmt, output=out, resume=resume, keyword=keyword,
-        limit=limit, order=order)
+        media=st["media"], media_types=st["media_types"],
+        max_media_mb=st["max_mb"], sleep=0.0, format=st["fmt"],
+        output=st["out"], resume=st["resume"], keyword=st["keyword"],
+        limit=st["limit"], order=st["order"])
+    terpilih = st["terpilih"]
 
-    # ringkasan
     print("\n---------------- RINGKASAN ----------------")
     print("Channel  : " + ", ".join(d.name for d in terpilih))
-    if days:
-        print(f"Rentang  : {days} hari terakhir")
+    if st["days"]:
+        print(f"Rentang  : {st['days']} hari terakhir")
     else:
-        print(f"Rentang  : {fmt_local(from_utc, tz) if from_utc else 'awal'} s/d "
-              f"{fmt_local(to_utc, tz) if to_utc else 'sekarang'}")
-    print(f"Urutan   : {'lama->baru' if order == 'oldest' else 'baru->lama'}"
-          + (f" | limit {limit}" if limit else ""))
-    if keyword:
-        print("Keyword  : " + " ".join(keyword))
-    print("Media    : " + (f"ya ({', '.join(media_types)}; maks {max_mb:g} MB)"
-                           if media else "tidak"))
-    print(f"Output   : {out}/ | format: {', '.join(fmt)}"
-          + (" | resume" if resume else ""))
+        print(f"Rentang  : "
+              f"{fmt_local(st['from_utc'], tz) if st['from_utc'] else 'awal'} s/d "
+              f"{fmt_local(st['to_utc'], tz) if st['to_utc'] else 'sekarang'}")
+    print(f"Urutan   : {'lama->baru' if st['order'] == 'oldest' else 'baru->lama'}"
+          + (f" | limit {st['limit']}" if st["limit"] else ""))
+    if st["keyword"]:
+        print("Keyword  : " + " ".join(st["keyword"]))
+    print("Media    : " + (f"ya ({', '.join(st['media_types'])}; "
+                           f"maks {st['max_mb']:g} MB)"
+                           if st["media"] else "tidak"))
+    print(f"Output   : {st['out']}/ | format: {', '.join(st['fmt'])}"
+          + (" | resume" if st["resume"] else ""))
     print("\nPerintah CLI setara (simpan untuk otomasi/cron):")
-    print("  " + bangun_perintah(ns, terpilih, from_str, to_str, days))
+    print("  " + bangun_perintah(ns, terpilih, st["from_str"], st["to_str"],
+                                 st["days"]))
 
-    if not tanya_ya("\nMulai unduh sekarang?", True):
+    if not tanya_ya("\nMulai unduh sekarang? (b = ubah pengaturan)", True):
         print("[i] Dibatalkan.")
-        return None
-    return ns, terpilih, from_utc, to_utc
+        st["batal"] = True
+        return
+    st["ns"] = ns
+
+
+async def mode_interaktif(client, tz, cache):
+    """Wizard bertahap. Di setiap pertanyaan: 'b' = kembali ke langkah/menu
+    sebelumnya, 'q' = keluar program. Kembalikan
+    (namespace, daftar_dialog_terpilih, from_utc, to_utc) atau None bila batal."""
+    print("\n================ MODE INTERAKTIF ================")
+    print("  (di setiap pertanyaan: b = kembali, q = keluar)")
+    st = {"batal": False, "from_utc": None, "to_utc": None, "days": None,
+          "from_str": None, "to_str": None}
+    langkah = [
+        lambda: langkah_channel(client, cache, st),
+        lambda: langkah_waktu(tz, st),
+        lambda: langkah_opsi(st),
+        lambda: langkah_media(st),
+        lambda: langkah_output(st),
+        lambda: langkah_konfirmasi(tz, st),
+    ]
+    i = 0
+    while i < len(langkah):
+        try:
+            await langkah[i]()
+            if st["batal"]:
+                return None
+            i += 1
+        except Kembali:
+            if i == 0:
+                print("[i] Sudah di langkah pertama.")
+            else:
+                i -= 1
+    return st["ns"], st["terpilih"], st["from_utc"], st["to_utc"]
 
 
 # ---------------------------------------------------------------- CLI
@@ -819,10 +896,10 @@ async def amain():
             print("[i] Kredensial API belum ada. Buat dulu di https://my.telegram.org")
             print("    (login -> 'API development tools' -> buat aplikasi apa saja)")
             while not api_id:
-                api_id = tanya("API ID  ")
+                api_id = tanya("API ID  ", back=False)
             while not api_hash:
-                api_hash = tanya("API Hash")
-            if tanya_ya(f"Simpan ke {CONFIG_PATH.name} agar tidak ditanya lagi?", True):
+                api_hash = tanya("API Hash", back=False)
+            if tanya_ya(f"Simpan ke {CONFIG_PATH.name} agar tidak ditanya lagi?", True, back=False):
                 simpan_config({"api_id": api_id, "api_hash": api_hash})
         else:
             sys.exit(
@@ -874,7 +951,7 @@ async def amain():
                         await unduh_channel(client, ns, d.entity, tz,
                                             f_utc, t_utc, cache)
                     print("\n[OK] Selesai.")
-                if not tanya_ya("\nJalankan unduhan lain?", False):
+                if not tanya_ya("\nJalankan unduhan lain?", False, back=False):
                     break
             return
 
@@ -892,6 +969,8 @@ async def amain():
 def main():
     try:
         asyncio.run(amain())
+    except Keluar:
+        print("[i] Keluar.")
     except KeyboardInterrupt:
         print("\n[!] Keluar.")
 
