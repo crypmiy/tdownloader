@@ -33,7 +33,7 @@ Dua cara pakai:
 Ubuntu 24 memakai PEP 668 (*externally-managed-environment*), jadi gunakan venv:
 
 ```bash
-git clone https://github.com/USERNAME/tdownloader.git
+git clone https://github.com/crypmiy/tdownloader.git
 cd tdownloader
 python3 -m venv venv
 venv/bin/pip install telethon
